@@ -18,25 +18,45 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.19
       id: cuda-toolkit
       with:
-        cuda: '12.6.0' # 目前GitHub Actions最稳的较新版本，兼容12.8运行
+        cuda: '12.6.0' # 兼容 12.8 运行
         method: 'network'
 
     - name: Install PyTorch Nightly & Build Deps
       run: |
+        # 更新 pip
+        python -m pip install --upgrade pip
+        # 安装 PyTorch Nightly (cu126)
         pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
-        pip install setuptools wheel ninja
+        # [关键修改] 安装 packaging 修复报错，以及其他编译工具
+        pip install --upgrade setuptools wheel ninja packaging
+
+    - name: Patch for Python 3.13 (Fix 'imp' module error)
+      shell: powershell
+      run: |
+        # 预防性修复：如果 setup.py 里有 'import imp' (Py3.13已删除)，把它注释掉
+        $file = "setup.py"
+        if (Test-Path $file) {
+            $content = Get-Content $file
+            if ($content -match "import imp") {
+                $content = $content -replace 'import imp', '# import imp'
+                $content | Set-Content $file
+                Write-Host "Patched setup.py: removed 'import imp'"
+            }
+        }
 
     - name: Build Wheel
       shell: cmd
       env:
-        # 9.0 对应 Hopper 架构 (H100/4090)，5090 (Blackwell) 可以完美兼容运行
-        # 如果你想激进一点，可以加 10.0，但编译器可能报错
+        # 9.0 对应 RTX 4090/H100 (Hopper)，RTX 5090 (Blackwell) 可以兼容运行
         TORCH_CUDA_ARCH_LIST: "9.0" 
         DISTUTILS_USE_SDK: 1
+        SETUPTOOLS_USE_DISTUTILS: stdlib
       run: |
-        python setup.py bdist_wheel
+        # 使用 -v 查看详细日志
+        python setup.py bdist_wheel -v
 
     - name: Upload Wheel
+      if: success() || failure() 
       uses: actions/upload-artifact@v4
       with:
         name: block-sparse-attention-wheel

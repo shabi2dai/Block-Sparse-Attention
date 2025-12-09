@@ -1,0 +1,43 @@
+name: Build Wheel for Windows
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.19
+      id: cuda-toolkit
+      with:
+        cuda: '12.6.0' # 目前GitHub Actions最稳的较新版本，兼容12.8运行
+        method: 'network'
+
+    - name: Install PyTorch Nightly & Build Deps
+      run: |
+        pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
+        pip install setuptools wheel ninja
+
+    - name: Build Wheel
+      shell: cmd
+      env:
+        # 9.0 对应 Hopper 架构 (H100/4090)，5090 (Blackwell) 可以完美兼容运行
+        # 如果你想激进一点，可以加 10.0，但编译器可能报错
+        TORCH_CUDA_ARCH_LIST: "9.0" 
+        DISTUTILS_USE_SDK: 1
+      run: |
+        python setup.py bdist_wheel
+
+    - name: Upload Wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: block-sparse-attention-wheel
+        path: dist/*.whl
